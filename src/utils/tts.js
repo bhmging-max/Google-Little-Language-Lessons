@@ -1,4 +1,6 @@
-// Browser-compatible implementation based on @sefinek/google-tts-api
+"use client";
+
+// Browser-compatible implementation based on @sefinek/google-tts-api and Web Speech API
 // Map language names to Google TTS language codes (BCP-47)
 const languageCodeMap = {
   // Language labels with BCP-47 codes
@@ -62,7 +64,6 @@ const languageCodeMap = {
   Armenian: "hy-AM",
   Azerbaijani: "az-AZ",
   Basque: "eu-ES",
-  Bengali: "bn-IN",
   Bosnian: "bs-BA",
   Catalan: "ca-ES",
   Georgian: "ka-GE",
@@ -164,6 +165,116 @@ const languageCodeMap = {
   zulu: "zu-ZA",
 };
 
+let voicesCache = null;
+let currentAudio = null;
+
+/**
+ * Check if Web Speech API is supported
+ * @returns {boolean}
+ */
+export function isSpeechSupported() {
+  return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
+/**
+ * Load voices asynchronously
+ * @returns {Promise<SpeechSynthesisVoice[]>}
+ */
+function loadVoices() {
+  return new Promise((resolve) => {
+    if (!isSpeechSupported()) {
+      resolve([]);
+      return;
+    }
+
+    if (voicesCache && voicesCache.length > 0) {
+      resolve(voicesCache);
+      return;
+    }
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      voicesCache = voices;
+      resolve(voices);
+      return;
+    }
+
+    window.speechSynthesis.onvoiceschanged = () => {
+      voicesCache = window.speechSynthesis.getVoices();
+      resolve(voicesCache);
+    };
+    
+    // Fallback if event doesn't fire
+    setTimeout(() => {
+      voicesCache = window.speechSynthesis.getVoices();
+      resolve(voicesCache);
+    }, 1000);
+  });
+}
+
+/**
+ * Find the best quality voice available for a language
+ * @param {string} langCode - Language code (e.g., 'en-US')
+ * @returns {Promise<SpeechSynthesisVoice|null>}
+ */
+export async function getBestVoice(langCode) {
+  if (!isSpeechSupported()) return null;
+
+  const voices = await loadVoices();
+  if (!voices || voices.length === 0) return null;
+
+  const baseLang = langCode.split('-')[0];
+  
+  const matchingVoices = voices.filter(voice => {
+    return voice.lang === langCode || 
+           voice.lang.replace('_', '-') === langCode ||
+           voice.lang.startsWith(baseLang);
+  });
+
+  if (matchingVoices.length === 0) return null;
+
+  // Score voices based on quality keywords
+  const scoreVoice = (voice) => {
+    let score = 0;
+    const name = voice.name.toLowerCase();
+    
+    // High priority: Neural and Natural voices
+    if (name.includes('neural') || name.includes('natural')) score += 10;
+    
+    // Medium priority: Premium, Enhanced
+    if (name.includes('premium') || name.includes('enhanced')) score += 5;
+    
+    // Default high-quality voices from major vendors
+    if (name.includes('google')) score += 3;
+    if (name.includes('microsoft')) score += 2;
+    if (name.includes('siri')) score += 2;
+    
+    // Default system voices
+    if (voice.default) score += 1;
+    
+    return score;
+  };
+
+  matchingVoices.sort((a, b) => scoreVoice(b) - scoreVoice(a));
+
+  return matchingVoices[0];
+}
+
+/**
+ * Stop any current speech
+ */
+export function stopSpeaking() {
+  if (isSpeechSupported()) {
+    window.speechSynthesis.cancel();
+  }
+  
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+}
+
 /**
  * Split long text into array of shorter strings
  * @param {string} text - Text to split
@@ -172,7 +283,7 @@ const languageCodeMap = {
  * @param {string} options.splitPunct - Additional punctuation to split on
  * @returns {string[]} - Array of text chunks
  */
-function splitLongText(text, { maxLength = 200, splitPunct = "" } = {}) {
+export function splitLongText(text, { maxLength = 200, splitPunct = "" } = {}) {
   // Define space and punctuation regex
   const spaceAndPunct =
     " \uFEFF\xA0!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~" + splitPunct;
@@ -194,13 +305,11 @@ function splitLongText(text, { maxLength = 200, splitPunct = "" } = {}) {
   let start = 0;
 
   while (true) {
-    // Check if remaining text is short enough
     if (text.length - start <= maxLength) {
       result.push(text.slice(start));
       break;
     }
 
-    // Check if we can split at maxLength
     let end = start + maxLength - 1;
     if (isSpaceOrPunct(text, end) || isSpaceOrPunct(text, end + 1)) {
       result.push(text.slice(start, end + 1));
@@ -208,56 +317,43 @@ function splitLongText(text, { maxLength = 200, splitPunct = "" } = {}) {
       continue;
     }
 
-    // Find last space or punctuation
     end = lastIndexOfSpaceOrPunct(text, start, end);
     if (end === -1) {
-      // If no space found, force split at maxLength
       result.push(text.slice(start, start + maxLength));
       start += maxLength;
     } else {
-      // Split at found position
       result.push(text.slice(start, end + 1));
       start = end + 1;
     }
   }
 
-  return result;
+  return result.filter(chunk => chunk.trim().length > 0);
 }
 
 /**
  * Generate TTS audio URL using our proxy API
- * @param {string} text - Text to convert to speech (max 200 chars)
+ * @param {string} text - Text to convert to speech (max 500 chars)
  * @param {object} options - Options
- * @param {string} options.lang - Language code
- * @param {boolean} options.slow - Whether to speak slowly
  * @returns {string} - Audio URL
  */
 export function getAudioUrl(text, { lang = "en", slow = false } = {}) {
-  // Input validation
   if (typeof text !== "string" || text.length === 0) {
     throw new TypeError("text should be a string");
   }
-  if (typeof lang !== "string" || lang.length === 0) {
-    throw new TypeError("lang should be a string");
-  }
-  if (typeof slow !== "boolean") {
-    throw new TypeError("slow should be a boolean");
-  }
 
-  if (text.length > 200) {
+  if (text.length > 500) {
     throw new RangeError(
-      `text length (${text.length}) should be less than 200 characters. Use getAllAudioUrls for long text.`
+      \`text length (\${text.length}) should be less than 500 characters. Use getAllAudioUrls for long text.\`
     );
   }
 
-  // Build query parameters using our proxy API
   const params = new URLSearchParams({
     text: text,
     lang: lang,
     slow: slow ? "true" : "false",
   });
 
-  return `/api/tts?${params.toString()}`;
+  return \`/api/tts?\${params.toString()}\`;
 }
 
 /**
@@ -270,15 +366,11 @@ export function getAllAudioUrls(
   text,
   { lang = "en", slow = false, splitPunct = "" } = {}
 ) {
-  // Input validation
   if (typeof text !== "string" || text.length === 0) {
     throw new TypeError("text should be a string");
   }
-  if (typeof splitPunct !== "string") {
-    throw new TypeError("splitPunct should be a string");
-  }
 
-  return splitLongText(text, { splitPunct }).map((shortText) => ({
+  return splitLongText(text, { maxLength: 500, splitPunct }).map((shortText) => ({
     shortText,
     url: getAudioUrl(shortText, { lang, slow }),
   }));
@@ -302,21 +394,16 @@ export function getLanguageCode(language) {
 export function getTextToSpeechUrl(text, language) {
   try {
     if (!text || text.trim() === "") {
-      console.warn("Empty text provided to TTS");
       return null;
     }
 
-    // Get the language code
     const langCode = getLanguageCode(language);
 
-    // If text is longer than 200 characters, use getAllAudioUrls
-    if (text.length > 200) {
+    if (text.length > 500) {
       const results = getAllAudioUrls(text, { lang: langCode });
-      // Return the first URL for simplicity
       return results[0]?.url;
     }
 
-    // Otherwise, get a single URL
     return getAudioUrl(text, { lang: langCode });
   } catch (error) {
     console.error("Error generating TTS URL:", error);
@@ -325,66 +412,132 @@ export function getTextToSpeechUrl(text, language) {
 }
 
 /**
- * Play text as speech
+ * Play text as speech using Web Speech API with fallback to Google TTS
  * @param {string} text - The text to speak
  * @param {string} language - The language name or code
+ * @returns {Promise<void>}
  */
-export function speakText(text, language) {
-  try {
-    if (!text || text.trim() === "") {
-      console.warn("Empty text provided to TTS");
-      return;
-    }
-
-    // Get language code
-    const langCode = getLanguageCode(language);
-
-    // For longer text, we need to split it
-    if (text.length > 200) {
-      const results = getAllAudioUrls(text, { lang: langCode });
-      if (!results.length) return;
-
-      // Play the first segment
-      playAudioSequence(results, 0);
-      return;
-    }
-
-    // For shorter text, just play it directly
-    const audioUrl = getAudioUrl(text, { lang: langCode });
-    if (!audioUrl) return;
-
-    const audio = new Audio(audioUrl);
-    audio.play().catch((err) => {
-      console.error("Error playing audio:", err);
-    });
-  } catch (error) {
-    console.error("Error speaking text:", error);
+export async function speakText(text, language) {
+  if (!text || text.trim() === "") {
+    return Promise.resolve();
   }
+
+  stopSpeaking();
+
+  const langCode = getLanguageCode(language);
+
+  // Try Web Speech API first
+  if (isSpeechSupported()) {
+    const voice = await getBestVoice(langCode);
+    
+    if (voice) {
+      return new Promise((resolve, reject) => {
+        // Split text for Speech Synthesis to avoid length limits on some browsers
+        const chunks = splitLongText(text, { maxLength: 200 });
+        let currentIndex = 0;
+        
+        const speakNextChunk = () => {
+          if (currentIndex >= chunks.length) {
+            resolve();
+            return;
+          }
+          
+          const chunkText = chunks[currentIndex];
+          const utterance = new SpeechSynthesisUtterance(chunkText);
+          utterance.voice = voice;
+          utterance.lang = voice.lang || langCode;
+          utterance.rate = 0.9;
+          utterance.pitch = 1.0;
+          
+          utterance.onend = () => {
+            currentIndex++;
+            speakNextChunk();
+          };
+          
+          utterance.onerror = (e) => {
+            console.error('SpeechSynthesis error:', e);
+            // Fallback to proxy API for remaining chunks
+            const remainingText = chunks.slice(currentIndex).join(' ');
+            speakTextFallback(remainingText, langCode).then(resolve).catch(reject);
+          };
+          
+          window.speechSynthesis.speak(utterance);
+        };
+        
+        speakNextChunk();
+      });
+    }
+  }
+
+  // Fallback to Proxy
+  return speakTextFallback(text, langCode);
+}
+
+/**
+ * Fallback mechanism using Audio element
+ */
+function speakTextFallback(text, langCode) {
+  return new Promise((resolve, reject) => {
+    if (text.length > 500) {
+      const results = getAllAudioUrls(text, { lang: langCode });
+      if (!results.length) {
+        resolve();
+        return;
+      }
+      playAudioSequence(results, 0, resolve, reject);
+      return;
+    }
+
+    const audioUrl = getAudioUrl(text, { lang: langCode });
+    if (!audioUrl) {
+      resolve();
+      return;
+    }
+
+    currentAudio = new Audio(audioUrl);
+    
+    currentAudio.onended = () => {
+      currentAudio = null;
+      resolve();
+    };
+    
+    currentAudio.onerror = (err) => {
+      console.error("Error playing fallback audio:", err);
+      currentAudio = null;
+      reject(err);
+    };
+    
+    currentAudio.play().catch((err) => {
+      console.error("Error starting fallback audio playback:", err);
+      currentAudio = null;
+      reject(err);
+    });
+  });
 }
 
 /**
  * Play a sequence of audio segments
- * @param {Array<{shortText: string, url: string}>} segments - The audio segments
- * @param {number} index - The current index
  */
-function playAudioSequence(segments, index) {
-  if (index >= segments.length) return;
+function playAudioSequence(segments, index, resolve, reject) {
+  if (index >= segments.length) {
+    resolve();
+    return;
+  }
 
-  const audio = new Audio(segments[index].url);
+  currentAudio = new Audio(segments[index].url);
 
-  audio.onended = () => {
-    // Play next segment when this one ends
-    playAudioSequence(segments, index + 1);
+  currentAudio.onended = () => {
+    playAudioSequence(segments, index + 1, resolve, reject);
   };
 
-  audio.onerror = (err) => {
+  currentAudio.onerror = (err) => {
     console.error("Error playing audio segment:", err);
-    // Try to continue with next segment
-    playAudioSequence(segments, index + 1);
+    // Continue with next segment rather than failing completely
+    playAudioSequence(segments, index + 1, resolve, reject);
   };
 
-  audio.play().catch((err) => {
+  currentAudio.play().catch((err) => {
     console.error("Error starting audio playback:", err);
-    playAudioSequence(segments, index + 1);
+    playAudioSequence(segments, index + 1, resolve, reject);
   });
 }

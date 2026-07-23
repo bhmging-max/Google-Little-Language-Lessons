@@ -1,12 +1,12 @@
 "use client";
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Volume2, Edit2, RefreshCw, X } from "lucide-react";
 import { generateLessonData } from "../api";
-import { getAudioUrl, getAllAudioUrls, getLanguageCode } from "@/utils/tts";
+import { speakText, getLanguageCode } from "@/utils/tts";
 
 const testData = {
   vocabulary: [
@@ -80,7 +80,6 @@ function TinyLessonContent() {
   const [loading, setLoading] = useState(false);
   const [playingAudio, setPlayingAudio] = useState(null);
   const [loadingAudio, setLoadingAudio] = useState(null);
-  const audioRef = useRef(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -146,129 +145,23 @@ function TinyLessonContent() {
     fetchLessonData(language, topic);
   };
 
-  // Function to handle TTS with visual feedback
-  const handleSpeak = (text, itemId) => {
+  const handleSpeak = async (text, itemId) => {
     if (!text || !language) return;
-
-    // Stop any currently playing audio
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
-
-    // If clicking the same item that's already playing, stop it
+    // Stop any currently playing
     if (playingAudio === itemId) {
+      window.speechSynthesis?.cancel();
       setPlayingAudio(null);
       return;
     }
-
-    // Set loading state
     setLoadingAudio(itemId);
-
+    setPlayingAudio(itemId);
     try {
-      // For text longer than 200 characters, we need to handle it differently
-      if (text.length > 200) {
-        // Get all audio URLs for the long text
-        const audioSegments = getAllAudioUrls(text, {
-          lang: getLanguageCode(language),
-        });
-        if (!audioSegments.length) {
-          setLoadingAudio(null);
-          return;
-        }
-
-        // Create the first audio element
-        const audio = new Audio(audioSegments[0].url);
-
-        // Set up loading handlers
-        audio.oncanplaythrough = () => {
-          setLoadingAudio(null);
-          setPlayingAudio(itemId);
-          audioRef.current = audio;
-
-          let currentIndex = 0;
-          // Play function that handles all segments sequentially
-          const playNextSegment = () => {
-            if (currentIndex >= audioSegments.length) {
-              setPlayingAudio(null);
-              audioRef.current = null;
-              return;
-            }
-
-            const segmentAudio = new Audio(audioSegments[currentIndex].url);
-            audioRef.current = segmentAudio;
-
-            segmentAudio.onended = () => {
-              currentIndex++;
-              playNextSegment();
-            };
-
-            segmentAudio.onerror = () => {
-              console.error("Error playing audio segment");
-              currentIndex++;
-              playNextSegment();
-            };
-
-            segmentAudio.play().catch((err) => {
-              console.error("Error starting audio playback:", err);
-              currentIndex++;
-              playNextSegment();
-            });
-          };
-
-          playNextSegment();
-        };
-
-        audio.onerror = () => {
-          console.error("Error loading audio");
-          setLoadingAudio(null);
-        };
-
-        // Trigger loading
-        audio.load();
-        return;
-      }
-
-      // For shorter text (under 200 chars)
-      const audioUrl = getAudioUrl(text, { lang: getLanguageCode(language) });
-      if (!audioUrl) {
-        setLoadingAudio(null);
-        return;
-      }
-
-      // Create and play audio
-      const audio = new Audio(audioUrl);
-
-      // Handle errors during loading
-      audio.onerror = () => {
-        console.error("Error loading audio");
-        setLoadingAudio(null);
-        setPlayingAudio(null);
-      };
-
-      // When audio can play, start playing
-      audio.oncanplaythrough = () => {
-        setLoadingAudio(null);
-        setPlayingAudio(itemId);
-        audioRef.current = audio;
-
-        audio.play().catch((err) => {
-          console.error("Error playing audio:", err);
-          setPlayingAudio(null);
-        });
-      };
-
-      // Reset playing state when audio ends
-      audio.onended = () => {
-        setPlayingAudio(null);
-        audioRef.current = null;
-      };
-
-      // Trigger loading
-      audio.load();
-    } catch (error) {
-      console.error("TTS error:", error);
+      await speakText(text, language);
+    } catch (e) {
+      console.error('TTS error:', e);
+    } finally {
       setLoadingAudio(null);
+      setPlayingAudio(null);
     }
   };
 
@@ -285,42 +178,44 @@ function TinyLessonContent() {
   // Render loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-white px-4 pb-16 flex flex-col items-center justify-center">
-        <div className="text-2xl font-bold mb-4">Loading your lesson...</div>
-        <div className="animate-pulse flex space-x-4">
-          <div className="rounded-full bg-blue-200 h-12 w-12"></div>
-          <div className="rounded-full bg-blue-300 h-12 w-12"></div>
-          <div className="rounded-full bg-blue-400 h-12 w-12"></div>
+      <div className="min-h-screen bg-[#0a0e1a] text-white px-4 pb-16 flex flex-col items-center justify-center font-sans">
+        <div className="text-2xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500">
+          Loading your lesson...
+        </div>
+        <div className="flex space-x-4">
+          <div className="w-12 h-12 rounded-full border-4 border-t-cyan-400 border-r-blue-500 border-b-cyan-600 border-l-transparent animate-spin"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white px-4 pb-16">
+    <div className="min-h-screen bg-[#0a0e1a] text-white px-4 pb-16 font-sans">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-10 pb-4">
         <div>
           <h1 className="text-5xl md:text-6xl font-black leading-tight mb-2">
-            <span className="text-blue-600">{language} for</span>{" "}
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500">
+              {language} for
+            </span>{" "}
             {editMode ? (
               <span className="inline-flex items-center gap-2">
                 <input
-                  className="text-black font-black text-4xl md:text-5xl px-2 py-1 rounded-md border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  className="text-white bg-white/10 font-black text-4xl md:text-5xl px-3 py-1 rounded-xl border border-white/20 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   value={topicInput}
                   onChange={(e) => setTopicInput(e.target.value)}
                   autoFocus
                 />
                 <Button
                   size="sm"
-                  className="ml-2 px-4 py-1 text-base font-semibold"
+                  className="ml-2 px-6 py-2 text-base font-semibold bg-cyan-500 hover:bg-cyan-600 text-white rounded-full transition-colors"
                   onClick={handleSave}
                 >
                   Save
                 </Button>
               </span>
             ) : (
-              <span className="text-black">{topic}</span>
+              <span className="text-white">{topic}</span>
             )}
           </h1>
         </div>
@@ -328,82 +223,72 @@ function TinyLessonContent() {
           <Button
             size="icon"
             variant="ghost"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-full transition-colors"
             onClick={handleEdit}
             aria-label="Edit topic"
           >
-            <Edit2 size={22} />
+            <Edit2 size={20} />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-full transition-colors"
             onClick={handleRefresh}
             aria-label="Refresh"
           >
-            <RefreshCw size={22} />
+            <RefreshCw size={20} />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-full transition-colors"
             onClick={handleClose}
             aria-label="Close"
           >
-            <X size={22} />
+            <X size={20} />
           </Button>
         </div>
       </div>
+      
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab} className="mt-8">
-        <TabsList className="flex gap-6 bg-transparent mb-8">
+        <TabsList className="flex gap-4 bg-transparent mb-8 overflow-x-auto justify-start border-b border-white/10 pb-4 h-auto">
           <TabsTrigger
             value="vocab"
-            className="rounded-full px-6 py-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 flex items-center gap-2"
+            className="rounded-full px-6 py-3 data-[state=active]:bg-white/10 data-[state=active]:text-cyan-400 text-gray-400 hover:text-white transition-colors flex items-center gap-2 font-medium"
           >
-            <span role="img" aria-label="vocab">
-              📝
-            </span>{" "}
-            Vocabulary
+            <span role="img" aria-label="vocab">📝</span> Vocabulary
           </TabsTrigger>
           <TabsTrigger
             value="phrases"
-            className="rounded-full px-6 py-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 flex items-center gap-2"
+            className="rounded-full px-6 py-3 data-[state=active]:bg-white/10 data-[state=active]:text-cyan-400 text-gray-400 hover:text-white transition-colors flex items-center gap-2 font-medium"
           >
-            <span role="img" aria-label="phrases">
-              💬
-            </span>{" "}
-            Phrases
+            <span role="img" aria-label="phrases">💬</span> Phrases
           </TabsTrigger>
           <TabsTrigger
             value="tips"
-            className="rounded-full px-6 py-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 flex items-center gap-2"
+            className="rounded-full px-6 py-3 data-[state=active]:bg-white/10 data-[state=active]:text-cyan-400 text-gray-400 hover:text-white transition-colors flex items-center gap-2 font-medium"
           >
-            <span role="img" aria-label="tips">
-              📖
-            </span>{" "}
-            Tips
+            <span role="img" aria-label="tips">📖</span> Tips
           </TabsTrigger>
         </TabsList>
+        
         {/* Vocabulary Tab */}
-        <TabsContent value="vocab">
-          <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-            <span role="img" aria-label="vocab">
-              📝
-            </span>{" "}
-            Vocabulary
+        <TabsContent value="vocab" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <h2 className="text-2xl font-bold flex items-center gap-2 mb-6 text-white">
+            <span role="img" aria-label="vocab">📝</span> Vocabulary
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {vocabToShow.map((item, i) => (
               <Card
                 key={i}
-                className="flex flex-row items-center justify-between bg-blue-50 px-6 py-6 rounded-2xl shadow-none"
+                className="flex flex-row items-center justify-between bg-white/5 backdrop-blur-md border border-white/10 px-6 py-6 rounded-2xl shadow-lg transition-transform hover:-translate-y-1"
               >
                 <div>
-                  <div className="text-xl font-semibold text-black mb-1">
+                  <div className="text-xl font-semibold text-white mb-1">
                     {item.word}
                   </div>
-                  <div className="text-gray-500 text-base">
+                  <div className="text-gray-400 text-base">
                     {item.translation}
                   </div>
                 </div>
@@ -411,20 +296,20 @@ function TinyLessonContent() {
                   size="icon"
                   variant="ghost"
                   className={`${
-                    playingAudio === `vocab-${i}` ? "bg-blue-200" : ""
-                  } text-blue-600`}
-                  onClick={() => handleSpeak(item.word, `vocab-${i}`)}
+                    playingAudio === \`vocab-\${i}\` ? "bg-cyan-500/20" : ""
+                  } text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-full h-12 w-12 transition-colors`}
+                  onClick={() => handleSpeak(item.word, \`vocab-\${i}\`)}
                   aria-label={
-                    playingAudio === `vocab-${i}`
+                    playingAudio === \`vocab-\${i}\`
                       ? "Stop speaking"
                       : "Speak word"
                   }
-                  disabled={loadingAudio === `vocab-${i}`}
+                  disabled={loadingAudio === \`vocab-\${i}\`}
                 >
-                  {loadingAudio === `vocab-${i}` ? (
-                    <div className="w-5 h-5 border-2 border-t-transparent border-blue-500 rounded-full animate-spin"></div>
+                  {loadingAudio === \`vocab-\${i}\` ? (
+                    <div className="w-5 h-5 border-2 border-t-transparent border-cyan-400 rounded-full animate-spin"></div>
                   ) : (
-                    <Volume2 size={20} />
+                    <Volume2 size={22} />
                   )}
                 </Button>
               </Card>
@@ -432,32 +317,30 @@ function TinyLessonContent() {
           </div>
           {lessonData.vocabulary.length > 4 && (
             <Button
-              className="w-full mt-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full py-6 text-lg font-semibold"
+              className="w-full mt-8 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full py-7 text-lg font-semibold shadow-lg shadow-cyan-500/20 transition-all border-0"
               onClick={() => setShowAllVocab((v) => !v)}
             >
               {showAllVocab ? "See less ▲" : "See more ▼"}
             </Button>
           )}
         </TabsContent>
+        
         {/* Phrases Tab */}
-        <TabsContent value="phrases">
-          <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-            <span role="img" aria-label="phrases">
-              💬
-            </span>{" "}
-            Phrases
+        <TabsContent value="phrases" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <h2 className="text-2xl font-bold flex items-center gap-2 mb-6 text-white">
+            <span role="img" aria-label="phrases">💬</span> Phrases
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {phrasesToShow.map((item, i) => (
               <Card
                 key={i}
-                className="flex flex-row items-center justify-between bg-blue-50 px-6 py-6 rounded-2xl shadow-none"
+                className="flex flex-row items-center justify-between bg-white/5 backdrop-blur-md border border-white/10 px-6 py-6 rounded-2xl shadow-lg transition-transform hover:-translate-y-1"
               >
-                <div>
-                  <div className="text-lg font-semibold text-black mb-1">
+                <div className="pr-4">
+                  <div className="text-lg font-semibold text-white mb-2 leading-snug">
                     {item.phrase}
                   </div>
-                  <div className="text-gray-500 text-base">
+                  <div className="text-gray-400 text-base">
                     {item.translation}
                   </div>
                 </div>
@@ -465,20 +348,20 @@ function TinyLessonContent() {
                   size="icon"
                   variant="ghost"
                   className={`${
-                    playingAudio === `phrase-${i}` ? "bg-blue-200" : ""
-                  } text-blue-600`}
-                  onClick={() => handleSpeak(item.phrase, `phrase-${i}`)}
+                    playingAudio === \`phrase-\${i}\` ? "bg-cyan-500/20" : ""
+                  } text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-full h-12 w-12 shrink-0 transition-colors`}
+                  onClick={() => handleSpeak(item.phrase, \`phrase-\${i}\`)}
                   aria-label={
-                    playingAudio === `phrase-${i}`
+                    playingAudio === \`phrase-\${i}\`
                       ? "Stop speaking"
                       : "Speak phrase"
                   }
-                  disabled={loadingAudio === `phrase-${i}`}
+                  disabled={loadingAudio === \`phrase-\${i}\`}
                 >
-                  {loadingAudio === `phrase-${i}` ? (
-                    <div className="w-5 h-5 border-2 border-t-transparent border-blue-500 rounded-full animate-spin"></div>
+                  {loadingAudio === \`phrase-\${i}\` ? (
+                    <div className="w-5 h-5 border-2 border-t-transparent border-cyan-400 rounded-full animate-spin"></div>
                   ) : (
-                    <Volume2 size={20} />
+                    <Volume2 size={22} />
                   )}
                 </Button>
               </Card>
@@ -486,66 +369,58 @@ function TinyLessonContent() {
           </div>
           {lessonData.phrases.length > 4 && (
             <Button
-              className="w-full mt-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full py-6 text-lg font-semibold"
+              className="w-full mt-8 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full py-7 text-lg font-semibold shadow-lg shadow-cyan-500/20 transition-all border-0"
               onClick={() => setShowAllPhrases((v) => !v)}
             >
               {showAllPhrases ? "See less ▲" : "See more ▼"}
             </Button>
           )}
         </TabsContent>
+        
         {/* Tips Tab */}
-        <TabsContent value="tips">
-          <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-            <span role="img" aria-label="tips">
-              📖
-            </span>{" "}
-            Tips
+        <TabsContent value="tips" className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <h2 className="text-2xl font-bold flex items-center gap-2 mb-6 text-white">
+            <span role="img" aria-label="tips">📖</span> Tips
           </h2>
           {tipsToShow.map((currentTip, idx) => (
             <Card
               key={idx}
-              className="bg-blue-50 p-8 rounded-2xl shadow-none mb-8"
+              className="bg-white/5 border border-white/10 p-8 rounded-3xl shadow-xl mb-8"
             >
-              <div className="text-xl font-bold mb-2">{currentTip.title}</div>
-              <div className="text-gray-700 mb-4">{currentTip.description}</div>
-              <div className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">
+              <div className="text-xl font-bold mb-3 text-white">{currentTip.title}</div>
+              <div className="text-gray-300 mb-8 leading-relaxed text-lg">{currentTip.description}</div>
+              <div className="text-xs font-semibold text-cyan-400 mb-4 uppercase tracking-widest">
                 Examples
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {currentTip.examples.map((ex, i) => (
                   <Card
                     key={i}
-                    className="flex flex-row items-center justify-between bg-blue-100 px-6 py-6 rounded-2xl shadow-none"
+                    className="flex flex-row items-center justify-between bg-white/10 border border-white/10 px-6 py-6 rounded-2xl shadow-none"
                   >
-                    <div className="text-lg font-semibold text-black">
-                      {ex}{" "}
-                      <span
-                        className="ml-2 text-blue-400 cursor-pointer"
-                        title="Info"
-                      >
-                        ⓘ
-                      </span>
+                    <div className="text-base font-medium text-white pr-4 leading-snug">
+                      {ex}
                     </div>
                     <Button
                       size="icon"
                       variant="ghost"
                       className={`${
-                        playingAudio === `tip-${idx}-ex-${i}`
-                          ? "bg-blue-200"
+                        playingAudio === \`tip-\${idx}-ex-\${i}\`
+                          ? "bg-cyan-500/20"
                           : ""
-                      } text-blue-600`}
-                      onClick={() => handleSpeak(ex, `tip-${idx}-ex-${i}`)}
+                      } text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-full h-10 w-10 shrink-0 transition-colors`}
+                      onClick={() => handleSpeak(ex, \`tip-\${idx}-ex-\${i}\`)}
                       aria-label={
-                        playingAudio === `tip-${idx}-ex-${i}`
+                        playingAudio === \`tip-\${idx}-ex-\${i}\`
                           ? "Stop speaking"
                           : "Speak example"
                       }
-                      disabled={loadingAudio === `tip-${idx}-ex-${i}`}
+                      disabled={loadingAudio === \`tip-\${idx}-ex-\${i}\`}
                     >
-                      {loadingAudio === `tip-${idx}-ex-${i}` ? (
-                        <div className="w-5 h-5 border-2 border-t-transparent border-blue-500 rounded-full animate-spin"></div>
+                      {loadingAudio === \`tip-\${idx}-ex-\${i}\` ? (
+                        <div className="w-4 h-4 border-2 border-t-transparent border-cyan-400 rounded-full animate-spin"></div>
                       ) : (
-                        <Volume2 size={20} />
+                        <Volume2 size={18} />
                       )}
                     </Button>
                   </Card>
@@ -555,7 +430,7 @@ function TinyLessonContent() {
           ))}
           {lessonData.tips.length > 1 && (
             <Button
-              className="w-full mt-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full py-6 text-lg font-semibold"
+              className="w-full mt-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full py-7 text-lg font-semibold shadow-lg shadow-cyan-500/20 transition-all border-0"
               onClick={() => setShowAllTips((v) => !v)}
             >
               {showAllTips ? "See less ▲" : "See more ▼"}
@@ -572,12 +447,10 @@ export default function TinyLessonResultPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-white px-4 pb-16 flex flex-col items-center justify-center">
-          <div className="text-2xl font-bold mb-4">Loading...</div>
-          <div className="animate-pulse flex space-x-4">
-            <div className="rounded-full bg-blue-200 h-12 w-12"></div>
-            <div className="rounded-full bg-blue-300 h-12 w-12"></div>
-            <div className="rounded-full bg-blue-400 h-12 w-12"></div>
+        <div className="min-h-screen bg-[#0a0e1a] px-4 pb-16 flex flex-col items-center justify-center text-white">
+          <div className="text-2xl font-bold mb-6 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500">Loading...</div>
+          <div className="flex space-x-4">
+            <div className="w-12 h-12 rounded-full border-4 border-t-cyan-400 border-r-blue-500 border-b-cyan-600 border-l-transparent animate-spin"></div>
           </div>
         </div>
       }

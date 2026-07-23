@@ -91,38 +91,50 @@ export default function TinyLessonPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center bg-white px-4 pb-16">
+    <div className="min-h-screen flex flex-col items-center bg-[#0a0e1a] text-white pb-16 font-sans">
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes float {
+          0% { transform: translateY(0px); }
+          50% { transform: translateY(-10px); }
+          100% { transform: translateY(0px); }
+        }
+        .animate-float {
+          animation: float 6s ease-in-out infinite;
+        }
+      `}} />
       {/* Heading */}
-      <header className="w-full text-center py-6 border-b border-gray-100 mb-2">
-        <h2 className="text-2xl font-medium tracking-tight">Tiny Lesson</h2>
+      <header className="w-full text-center py-6 bg-white/5 backdrop-blur-xl border-b border-white/10 mb-8">
+        <h2 className="text-2xl font-medium tracking-tight text-white">Tiny Lesson</h2>
       </header>
+      
       {/* Main Content */}
-      <main className="flex flex-col items-center w-full max-w-xl mx-auto mt-2">
+      <main className="flex flex-col items-center w-full max-w-xl mx-auto px-4 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-1000">
         <Image
           src="/hand-ladybug.png"
           alt="Tiny Lesson"
           width={180}
           height={180}
-          className="mb-4"
+          className="mb-6 animate-float drop-shadow-2xl"
         />
-        <span className="text-xs tracking-widest text-blue-700 font-mono font-semibold mb-2 block">
+        <span className="text-xs tracking-widest text-cyan-400 font-mono font-semibold mb-3 block">
           EXPERIMENT NO. 001
         </span>
         <h1
-          className="text-6xl font-black mb-2 text-center"
+          className="text-6xl font-black mb-4 text-center bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-500"
           style={{ fontFamily: "inherit", lineHeight: 1.1 }}
         >
           Tiny Lesson
         </h1>
-        <p className="text-gray-500 text-lg text-center mb-8 max-w-md">
+        <p className="text-gray-400 text-lg text-center mb-10 max-w-md">
           Find relevant vocabulary, phrases, and grammar tips for any situation.
         </p>
+        
         {/* Form */}
         <form
-          className="w-full flex flex-col items-center gap-6 mt-2"
+          className="w-full flex flex-col items-center gap-8 bg-white/5 backdrop-blur-md border border-white/10 p-8 rounded-3xl shadow-2xl"
           onSubmit={handleGenerate}
         >
-          <div className="w-full flex flex-col gap-5">
+          <div className="w-full flex flex-col gap-6">
             {/* Language */}
             <div className="flex flex-col gap-2 w-full">
               <label className="text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
@@ -132,12 +144,12 @@ export default function TinyLessonPage() {
                 value={selectedLanguage}
                 onValueChange={setSelectedLanguage}
               >
-                <SelectTrigger className="w-full rounded-full bg-gray-50 px-6 py-4 text-lg font-medium shadow-none border-0">
+                <SelectTrigger className="w-full rounded-xl bg-white/10 border border-white/10 px-6 py-6 text-lg font-medium text-white shadow-none focus:ring-2 focus:ring-cyan-500/50 outline-none">
                   <SelectValue placeholder="Select" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-[#0f1523] border border-white/10 text-white">
                   {languages.map((lang) => (
-                    <SelectItem key={lang.value} value={lang.value}>
+                    <SelectItem key={lang.value} value={lang.value} className="focus:bg-white/10 focus:text-white cursor-pointer">
                       {lang.label}
                     </SelectItem>
                   ))}
@@ -151,7 +163,7 @@ export default function TinyLessonPage() {
               </label>
               <input
                 type="text"
-                className="w-full rounded-full bg-gray-50 px-6 py-4 text-lg font-medium border-0 shadow-none placeholder-gray-400"
+                className="w-full rounded-xl bg-white/10 px-6 py-4 text-lg font-medium border border-white/10 text-white shadow-none placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all"
                 placeholder={purposePlaceholder}
                 value={purpose}
                 onChange={(e) => setPurpose(e.target.value)}
@@ -159,7 +171,7 @@ export default function TinyLessonPage() {
             </div>
           </div>
           <Button
-            className="rounded-full px-12 py-6 text-lg font-semibold bg-blue-100 text-blue-400 mt-2"
+            className="w-full rounded-full py-7 text-lg font-semibold bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20 transition-all border-0 mt-2"
             type="submit"
             disabled={!selectedLanguage}
           >

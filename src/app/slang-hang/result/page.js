@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Volume2, RefreshCw, X } from "lucide-react";
 import { generateConversationData } from "../api";
-import { getAudioUrl, getLanguageCode } from "@/utils/tts";
+import { speakText, getLanguageCode } from "@/utils/tts";
 
 // Sample test data for initial rendering
 const testData = {
@@ -66,7 +66,6 @@ const testData = {
 function MessageBubble({ message, language, isUserPrompt, speakers }) {
   const [playingAudio, setPlayingAudio] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
-  const audioRef = useRef(null);
 
   const isSystemMessage = !message.speaker;
 
@@ -83,55 +82,26 @@ function MessageBubble({ message, language, isUserPrompt, speakers }) {
 
   // Get background color based on speaker position
   const getBgColor = () => {
-    if (isSystemMessage) return "bg-gray-100";
-    return isFirstSpeaker ? "bg-blue-100" : "bg-indigo-100";
+    if (isSystemMessage) return "bg-white/10 text-gray-300";
+    return isFirstSpeaker ? "bg-purple-500/20 border border-purple-500/20 text-white" : "bg-indigo-500/20 border border-indigo-500/20 text-white";
   };
 
   // Function to handle TTS
-  const handleSpeak = () => {
+  const handleSpeak = async () => {
     if (!message.text || !language) return;
-
-    // If already playing, stop it
     if (playingAudio) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
+      window.speechSynthesis?.cancel();
       setPlayingAudio(false);
       return;
     }
-
-    // Get audio URL
-    const audioUrl = getAudioUrl(message.text, {
-      lang: getLanguageCode(language),
-    });
-
-    if (!audioUrl) return;
-
-    // Create and play audio
-    const audio = new Audio(audioUrl);
-    audioRef.current = audio;
-
-    // Set playing state
     setPlayingAudio(true);
-
-    // Reset playing state when audio ends
-    audio.onended = () => {
+    try {
+      await speakText(message.text, language);
+    } catch (e) {
+      console.error('TTS error:', e);
+    } finally {
       setPlayingAudio(false);
-      audioRef.current = null;
-    };
-
-    // Handle errors
-    audio.onerror = () => {
-      console.error("Error playing audio");
-      setPlayingAudio(false);
-    };
-
-    // Play audio
-    audio.play().catch((err) => {
-      console.error("Error playing audio:", err);
-      setPlayingAudio(false);
-    });
+    }
   };
 
   // Toggle translation visibility
@@ -142,7 +112,7 @@ function MessageBubble({ message, language, isUserPrompt, speakers }) {
   if (isSystemMessage) {
     return (
       <div className="flex justify-center my-4">
-        <div className="px-6 py-3 rounded-lg bg-green-100 text-green-800 max-w-[80%] text-sm">
+        <div className="px-6 py-3 rounded-lg bg-white/10 text-gray-300 border border-white/5 max-w-[80%] text-sm backdrop-blur-sm">
           {message.text}
         </div>
       </div>
@@ -152,21 +122,21 @@ function MessageBubble({ message, language, isUserPrompt, speakers }) {
   return (
     <div className={`flex ${alignment} my-6 max-w-full`}>
       <div
-        className={`px-5 py-4 rounded-2xl ${getBgColor()} max-w-[80%] shadow-sm`}
+        className={`px-5 py-4 rounded-2xl ${getBgColor()} max-w-[80%] shadow-sm backdrop-blur-sm`}
       >
-        <div className="text-xs font-semibold mb-2 text-gray-500">
+        <div className="text-xs font-semibold mb-2 text-gray-400">
           {message.speaker}
         </div>
         <p className="text-lg mb-2 font-medium">{message.text}</p>
 
         {showTranslation && message.translation && (
-          <p className="text-sm text-gray-600 italic border-t border-gray-200 pt-2 mt-1">
+          <p className="text-sm text-gray-400 italic border-t border-white/10 pt-2 mt-1">
             {message.translation}
           </p>
         )}
 
         {message.transliteration && (
-          <p className="text-xs text-gray-500 mt-2 border-t border-gray-100 pt-1">
+          <p className="text-xs text-gray-500 mt-2 border-t border-white/10 pt-1">
             {message.transliteration}
           </p>
         )}
@@ -176,10 +146,10 @@ function MessageBubble({ message, language, isUserPrompt, speakers }) {
             <Button
               size="sm"
               variant="ghost"
-              className="h-8 w-8 p-0 rounded-full hover:bg-opacity-20 hover:bg-blue-200"
+              className="h-8 w-8 p-0 rounded-full hover:bg-white/10 text-gray-400"
               onClick={toggleTranslation}
             >
-              <span className="text-xs font-bold text-gray-500">
+              <span className="text-xs font-bold">
                 {showTranslation ? "EN" : "en"}
               </span>
             </Button>
@@ -187,12 +157,12 @@ function MessageBubble({ message, language, isUserPrompt, speakers }) {
           <Button
             size="sm"
             variant="ghost"
-            className="h-8 w-8 p-0 rounded-full hover:bg-opacity-20 hover:bg-blue-200"
+            className="h-8 w-8 p-0 rounded-full hover:bg-purple-500/20 text-purple-400"
             onClick={handleSpeak}
           >
             <Volume2
               size={16}
-              className={playingAudio ? "text-blue-600" : "text-gray-500"}
+              className={playingAudio ? "text-purple-300" : "text-purple-400"}
             />
           </Button>
         </div>
@@ -203,16 +173,16 @@ function MessageBubble({ message, language, isUserPrompt, speakers }) {
 
 function SlangTermCard({ term }) {
   return (
-    <Card className="mb-6 p-5 bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow">
-      <h3 className="text-xl font-bold text-blue-800 mb-2">{term.term}</h3>
-      <p className="text-gray-700 mt-1">{term.definition}</p>
+    <Card className="mb-6 p-5 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-colors backdrop-blur-sm">
+      <h3 className="text-xl font-bold text-purple-300 mb-2">{term.term}</h3>
+      <p className="text-gray-300 mt-1">{term.definition}</p>
 
       {term.example && (
-        <div className="mt-3 bg-blue-50 p-3 rounded-lg">
-          <span className="text-xs font-semibold text-blue-500 uppercase tracking-wider">
+        <div className="mt-3 bg-purple-500/10 p-3 rounded-lg border border-purple-500/20">
+          <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">
             Example
           </span>
-          <p className="text-gray-700 italic mt-1">{term.example}</p>
+          <p className="text-gray-300 italic mt-1">{term.example}</p>
         </div>
       )}
 
@@ -221,7 +191,7 @@ function SlangTermCard({ term }) {
           <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
             Origin
           </span>
-          <p className="text-gray-700 mt-1">{term.origin}</p>
+          <p className="text-gray-400 mt-1">{term.origin}</p>
         </div>
       )}
     </Card>
@@ -359,42 +329,50 @@ function SlangHangContent({ language: initialLanguage }) {
   // Full-screen loading overlay
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
-        <div className="text-3xl font-bold mb-6">
+      <div className="fixed inset-0 bg-[#0a0e1a] text-white flex flex-col items-center justify-center z-50">
+        <style dangerouslySetInnerHTML={{
+          __html: `
+          @keyframes gradientPulse {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+          }
+        `}} />
+        <div className="text-3xl font-bold mb-6 bg-gradient-to-r from-purple-400 via-pink-500 to-purple-400 bg-[length:200%_auto] bg-clip-text text-transparent" style={{ animation: 'gradientPulse 3s ease infinite' }}>
           Generating conversation...
         </div>
         <div className="flex items-center justify-center space-x-3">
           <div
-            className="w-4 h-4 bg-blue-600 rounded-full animate-bounce"
+            className="w-4 h-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full animate-bounce"
             style={{ animationDelay: "0ms" }}
           ></div>
           <div
-            className="w-4 h-4 bg-blue-600 rounded-full animate-bounce"
+            className="w-4 h-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full animate-bounce"
             style={{ animationDelay: "150ms" }}
           ></div>
           <div
-            className="w-4 h-4 bg-blue-600 rounded-full animate-bounce"
+            className="w-4 h-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full animate-bounce"
             style={{ animationDelay: "300ms" }}
           ></div>
           <div
-            className="w-4 h-4 bg-blue-600 rounded-full animate-bounce"
+            className="w-4 h-4 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full animate-bounce"
             style={{ animationDelay: "450ms" }}
           ></div>
         </div>
-        <div className="mt-8 text-gray-500">This may take a few moments...</div>
+        <div className="mt-8 text-gray-400 font-mono text-sm">This may take a few moments...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white px-4 pb-16">
+    <div className="min-h-screen bg-[#0a0e1a] text-white px-4 pb-16">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pt-10 pb-4">
         <div>
-          <h1 className="text-5xl md:text-6xl font-black leading-tight mb-2">
+          <h1 className="text-5xl md:text-6xl font-black leading-tight mb-2 bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
             Slang Hang
           </h1>
-          <p className="text-xl text-gray-600">
+          <p className="text-xl text-purple-400 font-medium">
             Learning {language} slang through conversation
           </p>
         </div>
@@ -402,38 +380,38 @@ function SlangHangContent({ language: initialLanguage }) {
           <Button
             size="icon"
             variant="ghost"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-full transition-colors"
             onClick={handleRefresh}
             aria-label="Refresh"
           >
-            <RefreshCw size={22} />
+            <RefreshCw size={20} />
           </Button>
           <Button
             size="icon"
             variant="ghost"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
+            className="bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded-full transition-colors"
             onClick={handleClose}
             aria-label="Close"
           >
-            <X size={22} />
+            <X size={20} />
           </Button>
         </div>
       </div>
 
       {/* Context Information */}
       {conversationData.context && (
-        <div className="bg-gray-100 rounded-xl p-4 mb-6">
-          <h2 className="text-xl font-bold mb-2">Setting</h2>
-          <p className="mb-4">{conversationData.context.setting}</p>
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8 backdrop-blur-md">
+          <h2 className="text-xl font-bold mb-2 text-purple-300">Setting</h2>
+          <p className="mb-6 text-gray-300">{conversationData.context.setting}</p>
 
-          <h2 className="text-xl font-bold mb-2">Speakers</h2>
+          <h2 className="text-xl font-bold mb-3 text-purple-300">Speakers</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {conversationData.context.speakers.map((speaker, i) => (
-              <div key={i} className="bg-white p-3 rounded-lg">
-                <h3 className="font-bold">{speaker.name}</h3>
-                <p className="text-sm text-gray-600">{speaker.background}</p>
+              <div key={i} className="bg-white/10 p-4 rounded-xl border border-white/5">
+                <h3 className="font-bold text-lg text-white mb-1">{speaker.name}</h3>
+                <p className="text-sm text-gray-300">{speaker.background}</p>
                 {speaker.personality && (
-                  <p className="text-sm italic mt-1">{speaker.personality}</p>
+                  <p className="text-sm italic text-gray-400 mt-2">{speaker.personality}</p>
                 )}
               </div>
             ))}
@@ -443,10 +421,10 @@ function SlangHangContent({ language: initialLanguage }) {
 
       {/* Tabs */}
       <Tabs value={tab} onValueChange={setTab} className="mt-8">
-        <TabsList className="flex gap-6 bg-transparent mb-8">
+        <TabsList className="flex gap-4 bg-transparent mb-8">
           <TabsTrigger
             value="conversation"
-            className="rounded-full px-6 py-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 flex items-center gap-2"
+            className="rounded-full px-6 py-2.5 data-[state=active]:bg-white/10 data-[state=active]:text-purple-400 text-gray-400 hover:text-gray-200 transition-all flex items-center gap-2 border border-transparent data-[state=active]:border-white/10"
           >
             <span role="img" aria-label="conversation">
               💬
@@ -455,7 +433,7 @@ function SlangHangContent({ language: initialLanguage }) {
           </TabsTrigger>
           <TabsTrigger
             value="slang"
-            className="rounded-full px-6 py-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 flex items-center gap-2"
+            className="rounded-full px-6 py-2.5 data-[state=active]:bg-white/10 data-[state=active]:text-purple-400 text-gray-400 hover:text-gray-200 transition-all flex items-center gap-2 border border-transparent data-[state=active]:border-white/10"
           >
             <span role="img" aria-label="slang">
               📝
@@ -466,8 +444,8 @@ function SlangHangContent({ language: initialLanguage }) {
 
         {/* Conversation Tab */}
         <TabsContent value="conversation" className="focus:outline-none">
-          <div className="bg-gray-50 rounded-xl p-6 min-h-[500px] relative shadow-inner">
-            <div className="overflow-y-auto max-h-[600px] space-y-2 mb-20 px-4">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 min-h-[500px] relative shadow-2xl backdrop-blur-sm">
+            <div className="overflow-y-auto max-h-[600px] space-y-2 mb-20 px-4 custom-scrollbar">
               {displayedMessages.map((message, i) => (
                 <MessageBubble
                   key={i}
@@ -483,19 +461,19 @@ function SlangHangContent({ language: initialLanguage }) {
             {/* Continue button */}
             <div className="absolute bottom-6 left-0 right-0 flex justify-center">
               <Button
-                className="bg-blue-600 hover:bg-blue-700 text-white rounded-full py-2 px-8 text-base shadow-md"
+                className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-full py-6 px-10 text-base shadow-[0_0_20px_rgba(168,85,247,0.3)] hover:shadow-[0_0_25px_rgba(168,85,247,0.5)] transition-all border-0"
                 onClick={handleContinue}
                 disabled={loading || !hasMoreMessages}
               >
                 {loading ? (
                   <div className="flex items-center">
-                    <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin mr-2"></div>
+                    <div className="w-5 h-5 border-2 border-t-transparent border-white rounded-full animate-spin mr-3"></div>
                     Loading...
                   </div>
                 ) : hasMoreMessages ? (
-                  <>Press space to continue</>
+                  <span className="font-semibold tracking-wide">Press space to continue</span>
                 ) : (
-                  <>Conversation complete</>
+                  <span className="font-semibold tracking-wide text-white/80">Conversation complete</span>
                 )}
               </Button>
             </div>
@@ -504,25 +482,44 @@ function SlangHangContent({ language: initialLanguage }) {
 
         {/* Slang Glossary Tab */}
         <TabsContent value="slang" className="focus:outline-none">
-          <div className="bg-gray-50 rounded-xl p-6 shadow-inner">
-            <h2 className="text-2xl font-bold mb-6 flex items-center">
-              <span className="bg-blue-100 text-blue-700 w-8 h-8 rounded-full inline-flex items-center justify-center mr-2">
-                <span role="img" aria-label="slang">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-sm min-h-[500px]">
+            <h2 className="text-2xl font-bold mb-8 flex items-center text-white">
+              <span className="bg-purple-500/20 text-purple-400 w-10 h-10 rounded-full inline-flex items-center justify-center mr-3 border border-purple-500/30">
+                <span role="img" aria-label="slang" className="text-xl">
                   📝
                 </span>
               </span>
               Slang Glossary
             </h2>
-            {slangTerms.length > 0 ? (
-              slangTerms.map((term, i) => <SlangTermCard key={i} term={term} />)
-            ) : (
-              <p className="text-gray-500 text-center py-10">
-                No slang terms available yet.
-              </p>
-            )}
+            <div className="grid gap-4">
+              {slangTerms.length > 0 ? (
+                slangTerms.map((term, i) => <SlangTermCard key={i} term={term} />)
+              ) : (
+                <p className="text-gray-400 text-center py-16 text-lg">
+                  No slang terms available yet.
+                </p>
+              )}
+            </div>
           </div>
         </TabsContent>
       </Tabs>
+      <style dangerouslySetInnerHTML={{
+        __html: `
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.02);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.2);
+        }
+      `}} />
     </div>
   );
 }
@@ -532,8 +529,8 @@ export default function SlangHangResultPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex justify-center items-center min-h-screen">
-          <div className="text-3xl font-bold">Loading...</div>
+        <div className="flex justify-center items-center min-h-screen bg-[#0a0e1a] text-white">
+          <div className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent animate-pulse">Loading...</div>
         </div>
       }
     >
